@@ -748,35 +748,20 @@ impl<'db, L: TrieLayout> TrieDBMutBuilder<'db, L> {
 }
 
 #[derive(Debug)]
-pub struct NewChangesetNode<H, DL> {
+pub struct ChangeSet<H, DL> {
 	pub hash: H,
 	pub prefix: OwnedPrefix,
 	pub data: Vec<u8>,
 	pub children: Vec<Changeset<H, DL>>,
+	pub existing: Option<DL>,
 	// Storing the key and removed nodes related
 	// to this change set node (only needed for old trie).
 	pub removed_keys: Option<(Option<Vec<u8>>, Vec<(H, OwnedPrefix)>)>,
 }
 
-#[derive(Debug)]
-pub struct ExistingChangesetNode<H, DL> {
-	pub hash: H,
-	pub prefix: OwnedPrefix,
-	pub location: DL,
-}
-
-#[derive(Debug)]
-pub enum Changeset<H, DL> {
-	New(NewChangesetNode<H, DL>),
-	Existing(ExistingChangesetNode<H, DL>),
-}
-
 impl<H, DL> Changeset<H, DL> {
 	pub fn hash(&self) -> &H {
-		match self {
-			Changeset::New(node) => &node.hash,
-			Changeset::Existing(node) => &node.hash,
-		}
+		&self.hash
 	}
 }
 
@@ -785,13 +770,14 @@ impl<H, DL> Changeset<H, DL> {
 	/// do empty node optimization, it can
 	/// make sense to insert the empty node.
 	pub fn new_empty<C: NodeCodec<HashOut = H>>() -> Self {
-		Self::New(NewChangesetNode {
+		Self {
 			hash: C::hashed_null_node(),
 			prefix: Default::default(),
 			data: C::empty_node().to_vec(),
 			children: Default::default(),
+			existing: None,
 			removed_keys: None,
-		})
+		}
 	}
 }
 pub fn prefix_prefix(ks: &[u8], prefix: Prefix) -> (Vec<u8>, Option<u8>) {
