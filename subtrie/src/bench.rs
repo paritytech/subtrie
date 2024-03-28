@@ -74,12 +74,13 @@ fn benchmark<L: TrieLayout, S: TrieStream>(
 		bench_list,
 		|b, d: &TrieInsertionList| {
 			let mut memdb = MemoryDB::<_, HashKey<_>, _>::new(L::Codec::empty_node());
-			let commit = {
-				let mut t = TrieDBMutBuilder::<L>::new(&mut memdb).build();
-				for i in d.0.iter() {
-					t.insert(&i.0, &i.1).unwrap();
-				}
-				t.commit()
+
+			let mut t = TrieDBMutBuilder::<L>::new(&mut memdb).build();
+			for i in d.0.iter() {
+				t.insert(&i.0, &i.1).unwrap();
+			}
+			let Some(commit) = t.commit() else {
+				return;
 			};
 			let root = commit.hash();
 			commit.apply_to(&mut memdb);

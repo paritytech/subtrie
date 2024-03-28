@@ -18,7 +18,7 @@ use std::collections::HashMap;
 
 use crate::{
 	node_db::{Hasher, NodeDB, NodeDBMut, Prefix},
-	Changeset, NewChangesetNode,
+	Changeset,
 };
 
 /// Node location which is just an index into the `nodes` vector.
@@ -135,32 +135,15 @@ where
 		self.roots.is_empty()
 	}
 
-	fn apply(&mut self, c: &Changeset<H::Out, Location>) -> usize {
-		match c {
-			Changeset::Existing(e) => {
-				let location = e.location.unwrap_or_else(|| *self.roots.get(&e.hash).unwrap());
-				let entry = self.nodes.get_mut(location).unwrap();
-				match entry {
-					NodeEntry::Live { rc, .. } => {
-						*rc += 1;
-					},
-					NodeEntry::Removed => {
-						panic!("Accessing removed node");
-					},
-				};
-				location
-			},
-			Changeset::New(n) => {
-				let children = n.children.iter().map(|c| self.apply(c)).collect();
-				self.nodes.push(NodeEntry::Live {
-					key: n.hash,
-					data: n.data.clone(),
-					children,
-					rc: 1,
-				});
-				self.nodes.len() - 1
-			},
+	fn apply(&mut self, n: &Changeset<H::Out, Location>) -> usize {
+		if let Some(old) = n.existing {
+			unimplemented!("HERE TODO");
 		}
+
+		let children = n.children.iter().map(|c| self.apply(c)).collect();
+		self.nodes
+			.push(NodeEntry::Live { key: n.hash, data: n.data.clone(), children, rc: 1 });
+		self.nodes.len() - 1
 	}
 
 	pub fn apply_commit(&mut self, commit: Changeset<H::Out, Location>) -> H::Out {
@@ -172,7 +155,7 @@ where
 		}
 		// In non test use, the root should be store before calling commit (known
 		// from tree where commit was build from).
-		if let Changeset::New(NewChangesetNode { removed_keys: Some((_, removed)), .. }) = &commit {
+		if let Some((_, removed)) = &commit.removed_keys {
 			for (k, _) in removed {
 				self.remove_root(&k);
 			}
@@ -240,7 +223,7 @@ mod tests {
 	use crate::{
 		keccak_hasher::{KeccakHash, KeccakHasher},
 		node_db::{Hasher, NodeDB},
-		Changeset, ExistingChangesetNode, NewChangesetNode,
+		Changeset,
 	};
 
 	fn hash(i: u32) -> KeccakHash {
@@ -248,40 +231,15 @@ mod tests {
 	}
 
 	#[test]
-	fn test_apply_existing_node() {
-		let mut db = MemTreeDB::<KeccakHasher>::default();
-
-		// First, apply a new node
-		let new_node = Changeset::New(NewChangesetNode {
-			hash: hash(1),
-			prefix: Default::default(),
-			data: vec![1, 2, 3],
-			children: vec![],
-			removed_keys: None,
-		});
-		let new_location = db.apply(&new_node);
-
-		// Then, apply an existing node that refers to the new node
-		let existing_node = Changeset::Existing(ExistingChangesetNode {
-			hash: hash(1),
-			location: Some(new_location),
-			prefix: Default::default(),
-		});
-		let existing_location = db.apply(&existing_node);
-
-		assert_eq!(existing_location, new_location);
-	}
-
-	#[test]
 	fn test_apply_new_node() {
 		let mut db = MemTreeDB::<KeccakHasher>::default();
-		let node = Changeset::New(NewChangesetNode {
+		let node = Changeset {
 			hash: KeccakHash::default(),
 			prefix: Default::default(),
 			data: vec![1, 2, 3],
 			children: vec![],
 			removed_keys: None,
-		});
+		};
 		let location = db.apply(&node);
 		assert_eq!(location, db.nodes.len() - 1);
 	}
@@ -289,13 +247,13 @@ mod tests {
 	#[test]
 	fn test_apply_commit() {
 		let mut db = MemTreeDB::<KeccakHasher>::default();
-		let commit = Changeset::New(NewChangesetNode {
+		let commit = Changeset {
 			hash: KeccakHash::default(),
 			prefix: Default::default(),
 			data: vec![1, 2, 3],
 			children: vec![],
 			removed_keys: None,
-		});
+		};
 		db.apply_commit(commit);
 		assert_eq!(db.roots.len(), 1);
 	}
@@ -305,29 +263,29 @@ mod tests {
 		let mut db = MemTreeDB::<KeccakHasher>::default();
 
 		// Create two child nodes
-		let child1 = Changeset::New(NewChangesetNode {
+		let child1 = Changeset {
 			hash: hash(1),
 			prefix: Default::default(),
 			data: vec![1, 2, 3],
 			children: vec![],
 			removed_keys: None,
-		});
-		let child2 = Changeset::New(NewChangesetNode {
+		};
+		let child2 = Changeset {
 			hash: hash(2),
 			prefix: Default::default(),
 			data: vec![4, 5, 6],
 			children: vec![],
 			removed_keys: None,
-		});
+		};
 
 		// Create a root node that refers to the child nodes
-		let commit = Changeset::New(NewChangesetNode {
+		let commit = Changeset {
 			hash: hash(0),
 			prefix: Default::default(),
 			data: vec![7, 8, 9],
 			children: vec![child1, child2],
 			removed_keys: None,
-		});
+		};
 
 		db.apply_commit(commit);
 
