@@ -571,10 +571,20 @@ impl<L: TrieLayout> InsertAction<L> {
 
 // What kind of node is stored here.
 enum Stored<L: TrieLayout> {
-	// A new node.
-	New(Node<L>),
+	// A new node with optionally its original location.
+	New(Node<L>, Option<L::Location>),
 	// A cached node, loaded from the DB.
 	Cached(Node<L>, TrieHash<L>, L::Location),
+}
+
+impl<L: TrieLayout> Stored<L> {
+	// TODO rem
+	fn existing(&self) -> Option<L::Location> {
+		match self {
+			Stored::Cached(_, _, loc) => Some(*loc),
+			Stored::New(_, l) => l,
+		}
+	}
 }
 
 /// Used to build a collection of child nodes from a collection of `NodeHandle`s
@@ -2018,7 +2028,7 @@ where
 		};
 
 		match self.storage.destroy(handle) {
-			Stored::New(node) => {
+			Stored::New(node, existing) => {
 				let mut k = NibbleVec::new();
 				let mut children = Vec::new();
 
@@ -2034,6 +2044,7 @@ where
 								data: value.to_vec(), //TODO: avoid allocation
 								children: Default::default(),
 								removed_keys: None,
+								existing: unimplemented!("TODO location of children in into_encoded"),
 							});
 
 							k.drop_lasts(mov);
@@ -2063,6 +2074,7 @@ where
 					data: encoded_root,
 					children,
 					removed_keys: Some((keyspace.map(|s| s.to_vec()), removed)),
+					existing,
 				})
 			},
 			Stored::Cached(node, hash, location) => {
@@ -2117,7 +2129,7 @@ where
 						// TODO why do we need to retthis??
 						ChildReference::Hash(hash, location)
 					},
-					Stored::New(node) => {
+					Stored::New(node, existing) => {
 						let mut sub_children = Vec::new();
 						let (encoded, child_set) = {
 							let commit_child = |node: NodeToEncode<TrieHash<L>, L::Location>,
@@ -2133,6 +2145,7 @@ where
 											data: value.to_vec(), //TODO: avoid allocation
 											children: Default::default(),
 											removed_keys: None,
+											existing: unimplemented!("TODO location of children in into_encoded"),
 										});
 
 										self.cache_value(prefix.inner(), value, value_hash);
@@ -2165,6 +2178,7 @@ where
 								data: encoded,
 								children: sub_children,
 								removed_keys: None,
+								existing,
 							});
 							ChildReference::Hash(hash, Default::default())
 						} else {
