@@ -1408,7 +1408,7 @@ where
 					// make an extension using it. this is a replacement.
 					InsertAction::Replace(Node::Extension(
 						existing_key.to_stored_range(common),
-						self.storage.alloc(Stored::New(augmented_low)).into(),
+						self.storage.alloc(Stored::New(augmented_low, None)).into(), // TODO fishy none loc
 					))
 				}
 			},
@@ -1439,7 +1439,11 @@ where
 						// No need to register set branch (was here before).
 						// Note putting a branch in extension requires fix.
 						let ext = Node::Extension(existing_key.mid(1).to_stored(), child_branch);
-						Some(self.storage.alloc(Stored::New(ext)).into())
+						Some(self.storage.alloc(Stored::New(ext, None)).into()) // TODO none is fishy but we
+																																		// shall remove extinesion code
+																																		// soon. TODO change if we
+																																		// endup passsing location in
+																																		// inspactor
 					};
 
 					// continue inserting.
@@ -1495,7 +1499,8 @@ where
 					// this is known because the partial key is only the common prefix.
 					InsertAction::Replace(Node::Extension(
 						existing_key.to_stored_range(common),
-						self.storage.alloc(Stored::New(augmented_low)).into(),
+						self.storage.alloc(Stored::New(augmented_low, None)).into(), // TODO this None in
+																																				 // location is fishy!!!
 					))
 				}
 			},
@@ -1825,12 +1830,12 @@ where
 								self.storage.destroy(handle)
 							},
 						};
-						let child_node = match stored {
-							Stored::New(node) => node,
-							Stored::Cached(node, hash, _location) => {
+						let (child_node, child_location) = match stored {
+							Stored::New(node, location) => (node, location),
+							Stored::Cached(node, hash, location) => {
 								self.death_row
 									.insert((hash, (child_prefix.0[..].into(), child_prefix.1)));
-								node
+								(node, Some(location))
 							},
 						};
 						btreerefset.map(|c| self.death_row_child.push(c));
@@ -1923,8 +1928,8 @@ where
 				};
 
 				let (child_node, maybe_hash, child_location) = match stored {
-					Stored::New(node) => (node, None, Default::default()),
-					Stored::Cached(node, hash, location) => (node, Some(hash), location),
+					Stored::New(node, location) => (node, None, location),
+					Stored::Cached(node, hash, location) => (node, Some(hash), Some(location)),
 				};
 
 				match child_node {
@@ -1971,9 +1976,9 @@ where
 
 						// reallocate the child node.
 						let stored = if let Some(hash) = maybe_hash {
-							Stored::Cached(child_node, hash, child_location)
+							Stored::Cached(child_node, hash, child_location.unwrap_or_default())
 						} else {
-							Stored::New(child_node)
+							Stored::New(child_node, child_location)
 						};
 
 						Ok(Node::Extension(partial, self.storage.alloc(stored).into()))
@@ -2044,7 +2049,9 @@ where
 								data: value.to_vec(), //TODO: avoid allocation
 								children: Default::default(),
 								removed_keys: None,
-								existing: unimplemented!("TODO location of children in into_encoded"),
+								existing: unimplemented!(
+									"TODO location of children in into_encoded"
+								),
 							});
 
 							k.drop_lasts(mov);
@@ -2145,7 +2152,9 @@ where
 											data: value.to_vec(), //TODO: avoid allocation
 											children: Default::default(),
 											removed_keys: None,
-											existing: unimplemented!("TODO location of children in into_encoded"),
+											existing: unimplemented!(
+												"TODO location of children in into_encoded"
+											),
 										});
 
 										self.cache_value(prefix.inner(), value, value_hash);
@@ -2290,7 +2299,7 @@ where
 			None => {
 				#[cfg(feature = "std")]
 				trace!(target: "trie", "remove: obliterated trie");
-				let handle = self.storage.alloc(Stored::New(Node::Empty));
+				let handle = self.storage.alloc(Stored::New(Node::Empty, None));
 				self.root_handle = NodeHandle::InMemory(handle);
 			},
 		}
