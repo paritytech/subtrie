@@ -38,7 +38,7 @@ fn test_encode_compact<L: TrieLayout, DB: TestDB<L>>(
 		for (key, value) in entries.iter() {
 			trie.insert(key, value).unwrap();
 		}
-		let commit = trie.commit();
+		let commit = trie.commit().unwrap();
 		let root = db.commit(commit);
 		(db, root)
 	};
@@ -168,7 +168,7 @@ fn encoding_node_owned_and_decoding_node_works() {
 		for (key, value) in entries.iter() {
 			trie.insert(key, value).unwrap();
 		}
-		let commit = trie.commit();
+		let commit = trie.commit().unwrap();
 		commit.apply_to(&mut db);
 		let root = commit.root_hash();
 

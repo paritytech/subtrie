@@ -57,7 +57,7 @@ fn test_generate_proof<L: TrieLayout, DB: TestDB<L>>(
 		for (key, value) in entries.iter() {
 			trie.insert(key, value).unwrap();
 		}
-		let commit = trie.commit();
+		let commit = trie.commit().unwrap();
 		let root = db.commit(commit);
 		(db, root)
 	};

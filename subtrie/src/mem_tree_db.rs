@@ -136,10 +136,6 @@ where
 	}
 
 	fn apply(&mut self, n: &Changeset<H::Out, Location>) -> usize {
-		if let Some(old) = n.existing {
-			unimplemented!("HERE TODO");
-		}
-
 		let children = n.children.iter().map(|c| self.apply(c)).collect();
 		self.nodes
 			.push(NodeEntry::Live { key: n.hash, data: n.data.clone(), children, rc: 1 });
@@ -156,8 +152,12 @@ where
 		// In non test use, the root should be store before calling commit (known
 		// from tree where commit was build from).
 		if let Some((_, removed)) = &commit.removed_keys {
-			for (k, _) in removed {
+			for (k, _, location) in removed {
 				self.remove_root(&k);
+
+				if let Some(l) = location {
+					self.nodes[*l] = NodeEntry::Removed;
+				}
 			}
 		}
 		root
@@ -239,7 +239,6 @@ mod tests {
 			data: vec![1, 2, 3],
 			children: vec![],
 			removed_keys: None,
-			existing: None,
 		};
 		let location = db.apply(&node);
 		assert_eq!(location, db.nodes.len() - 1);
@@ -254,7 +253,6 @@ mod tests {
 			data: vec![1, 2, 3],
 			children: vec![],
 			removed_keys: None,
-			existing: None,
 		};
 		db.apply_commit(commit);
 		assert_eq!(db.roots.len(), 1);
@@ -271,7 +269,6 @@ mod tests {
 			data: vec![1, 2, 3],
 			children: vec![],
 			removed_keys: None,
-			existing: None,
 		};
 		let child2 = Changeset {
 			hash: hash(2),
@@ -279,7 +276,6 @@ mod tests {
 			data: vec![4, 5, 6],
 			children: vec![],
 			removed_keys: None,
-			existing: None,
 		};
 
 		// Create a root node that refers to the child nodes
@@ -289,7 +285,6 @@ mod tests {
 			data: vec![7, 8, 9],
 			children: vec![child1, child2],
 			removed_keys: None,
-			existing: None,
 		};
 
 		db.apply_commit(commit);

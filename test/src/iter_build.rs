@@ -49,7 +49,7 @@ fn test_iter<T: TrieLayout>(data: Vec<(Vec<u8>, Vec<u8>)>) {
 			let value: &[u8] = &data[i].1;
 			t.insert(key, value).unwrap();
 		}
-		t.commit()
+		t.commit().unwrap()
 	};
 	changeset.apply_to(&mut db);
 	let t = TrieDBBuilder::<T>::new(&db, changeset.hash()).build();

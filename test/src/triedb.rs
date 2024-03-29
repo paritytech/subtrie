@@ -44,7 +44,7 @@ fn iterator_works_internal<T: TrieLayout, DB: TestDB<T>>() {
 	for (x, y) in &pairs {
 		t.insert(x, y).unwrap();
 	}
-	let commit = t.commit();
+	let commit = t.commit().unwrap();
 	let root = memdb.commit(commit);
 
 	let trie = TrieDBBuilder::<T>::new(&memdb, &root).build();
@@ -71,7 +71,7 @@ fn iterator_seek_works_internal<T: TrieLayout, DB: TestDB<T>>() {
 	for (x, y) in &pairs {
 		t.insert(x, y).unwrap();
 	}
-	let root = t.commit().commit_to(&mut memdb);
+	let root = t.commit().unwrap().commit_to(&mut memdb);
 
 	let t = TrieDBBuilder::<T>::new(&memdb, &root).build();
 
@@ -108,7 +108,7 @@ fn double_ended_iterator_internal<T: TrieLayout, DB: TestDB<T>>() {
 	for (x, y) in &pairs {
 		t.insert(x, y).unwrap();
 	}
-	let commit = t.commit();
+	let commit = t.commit().unwrap();
 	let root = memdb.commit(commit);
 
 	let t = TrieDBBuilder::<T>::new(&memdb, &root).build();
@@ -136,7 +136,7 @@ fn iterator_internal<T: TrieLayout, DB: TestDB<T>>() {
 	for x in &d {
 		t.insert(x, x).unwrap();
 	}
-	let root = t.commit().commit_to(&mut memdb);
+	let root = t.commit().unwrap().commit_to(&mut memdb);
 
 	let t = TrieDBBuilder::<T>::new(&memdb, &root).build();
 	assert_eq!(
@@ -156,7 +156,7 @@ fn iterator_seek_internal<T: TrieLayout, DB: TestDB<T>>() {
 	for (k, val) in d.iter().zip(vals.iter()) {
 		t.insert(k, val.as_slice()).unwrap();
 	}
-	let root = t.commit().commit_to(&mut memdb);
+	let root = t.commit().unwrap().commit_to(&mut memdb);
 
 	let t = TrieDBBuilder::<T>::new(&memdb, &root).build();
 	let mut iter = t.iter().unwrap();
@@ -211,7 +211,7 @@ fn trie_from_hex_keys<T, DB: TestDB<T>>(
 	for (index, key) in keys.iter().enumerate() {
 		t.insert(&array_bytes::hex2bytes(key).unwrap(), &[index as u8]).unwrap();
 	}
-	let root = t.commit().commit_to(&mut memdb);
+	let root = t.commit().unwrap().commit_to(&mut memdb);
 
 	let mut t = TrieDBBuilder::<T>::new(&memdb, &root).build();
 	callback(&mut t);
@@ -325,7 +325,7 @@ fn get_length_with_extension_internal<T: TrieLayout, DB: TestDB<T>>() {
 	let mut t = TrieDBMutBuilder::<T>::new(&mut memdb).build();
 	t.insert(b"A", b"ABC").unwrap();
 	t.insert(b"B", b"ABCBAAAAAAAAAAAAAAAAAAAAAAAAAAAA").unwrap();
-	let root = t.commit().commit_to(&mut memdb);
+	let root = t.commit().unwrap().commit_to(&mut memdb);
 
 	let t = TrieDBBuilder::<T>::new(&memdb, &root).build();
 	assert_eq!(t.get_with(b"A", |x: &[u8]| x.len()).unwrap(), Some(3));
@@ -345,7 +345,7 @@ where
 	for x in &d {
 		t.insert(x, x).unwrap();
 	}
-	let root = t.commit().commit_to(&mut memdb);
+	let root = t.commit().unwrap().commit_to(&mut memdb);
 
 	let t = TrieDBBuilder::<T>::new(&memdb, &root).build();
 
@@ -424,7 +424,7 @@ fn test_lookup_with_corrupt_data_returns_decoder_error_internal<T: TrieLayout, D
 	let mut t = TrieDBMutBuilder::<T>::new(&mut memdb).build();
 	t.insert(b"A", b"ABC").unwrap();
 	t.insert(b"B", b"ABCBA").unwrap();
-	let root = t.commit().commit_to(&mut memdb);
+	let root = t.commit().unwrap().commit_to(&mut memdb);
 
 	let t = TrieDBBuilder::<T>::new(&memdb, &root).build();
 
@@ -456,7 +456,7 @@ fn test_recorder_internal<T: TrieLayout, DB: TestDB<T>>() {
 	for (key, value) in &key_value {
 		t.insert(key, value).unwrap();
 	}
-	let root = memdb.commit(t.commit());
+	let root = memdb.commit(t.commit().unwrap());
 
 	let mut recorder = Recorder::<T>::new();
 	{
@@ -497,7 +497,7 @@ fn test_recorder_with_cache_internal<T: TrieLayout, DB: TestDB<T>>() {
 	for (key, value) in &key_value {
 		t.insert(key, value).unwrap();
 	}
-	let root = t.commit().commit_to(&mut memdb);
+	let root = t.commit().unwrap().commit_to(&mut memdb);
 
 	let mut cache = TestTrieCache::<T>::default();
 
@@ -582,7 +582,7 @@ fn test_recorder_with_cache_get_hash_internal<T: TrieLayout, DB: TestDB<T>>() {
 	for (key, value) in &key_value {
 		t.insert(key, value).unwrap();
 	}
-	let root = t.commit().commit_to(&mut memdb);
+	let root = t.commit().unwrap().commit_to(&mut memdb);
 
 	let mut cache = TestTrieCache::<T>::default();
 
@@ -689,7 +689,7 @@ fn test_merkle_value_internal<T: TrieLayout, DB: TestDB<T>>() {
 	for (key, value) in &key_value {
 		t.insert(key, value).unwrap();
 	}
-	let root = memdb.commit(t.commit());
+	let root = memdb.commit(t.commit().unwrap());
 
 	// Ensure we can fetch the merkle values for all present keys.
 	let trie = TrieDBBuilder::<T>::new(&memdb, &root).build();
@@ -746,7 +746,7 @@ fn test_merkle_value_single_key_internal<T: TrieLayout, DB: TestDB<T>>() {
 	for (key, value) in &key_value {
 		t.insert(key, value).unwrap();
 	}
-	let root = memdb.commit(t.commit());
+	let root = memdb.commit(t.commit().unwrap());
 
 	let trie = TrieDBBuilder::<T>::new(&memdb, &root).build();
 
@@ -771,7 +771,7 @@ fn test_merkle_value_branches_internal<T: TrieLayout, DB: TestDB<T>>() {
 	for (key, value) in &key_value {
 		t.insert(key, value).unwrap();
 	}
-	let root = memdb.commit(t.commit());
+	let root = memdb.commit(t.commit().unwrap());
 
 	let trie = TrieDBBuilder::<T>::new(&memdb, &root).build();
 
@@ -791,7 +791,7 @@ fn test_merkle_value_empty_trie_internal<T: TrieLayout, DB: TestDB<T>>() {
 	// Valid state root.
 	let mut t = TrieDBMutBuilder::<T>::new(&memdb).build();
 	t.insert(&[], &[]).unwrap();
-	let root = memdb.commit(t.commit());
+	let root = memdb.commit(t.commit().unwrap());
 
 	// Data set is empty.
 	let trie = TrieDBBuilder::<T>::new(&memdb, &root).build();
@@ -821,7 +821,7 @@ fn test_merkle_value_modification_internal<T: TrieLayout, DB: TestDB<T>>() {
 	for (key, value) in &key_value {
 		t.insert(key, value).unwrap();
 	}
-	let root = memdb.commit(t.commit());
+	let root = memdb.commit(t.commit().unwrap());
 
 	let (a_hash_lhs, aaaa_hash_lhs, aaba_hash_lhs) = {
 		let trie = TrieDBBuilder::<T>::new(&memdb, &root).build();
@@ -841,7 +841,7 @@ fn test_merkle_value_modification_internal<T: TrieLayout, DB: TestDB<T>>() {
 	// Modify AABA and expect AAAA to return the same merkle value.
 	let mut t = TrieDBMutBuilder::<T>::from_existing(&memdb, root).build();
 	t.insert(b"AABA", &vec![3; 64]).unwrap();
-	let root = memdb.commit(t.commit());
+	let root = memdb.commit(t.commit().unwrap());
 
 	let (a_hash_rhs, aaaa_hash_rhs, aaba_hash_rhs) = {
 		let trie = TrieDBBuilder::<T>::new(&memdb, &root).build();
@@ -875,7 +875,7 @@ fn iterator_seek_with_recorder_internal<T: TrieLayout, DB: TestDB<T>>() {
 	for (k, val) in d.iter().zip(vals.iter()) {
 		t.insert(k, val.as_slice()).unwrap();
 	}
-	let root = t.commit().commit_to(&mut memdb);
+	let root = t.commit().unwrap().commit_to(&mut memdb);
 
 	let mut recorder = Recorder::<T>::new();
 	{
@@ -918,7 +918,7 @@ fn test_cache_internal<T: TrieLayout, DB: TestDB<T>>() {
 		for (key, value) in &key_value {
 			t.insert(key, value).unwrap();
 		}
-		t.commit()
+		t.commit().unwrap()
 	};
 	let root = memdb.commit(changeset);
 	let t = TrieDBBuilder::<T>::new(&memdb, &root).with_cache(&mut cache).build();
@@ -946,7 +946,7 @@ fn test_cache_internal<T: TrieLayout, DB: TestDB<T>>() {
 	for (key, value) in &key_value {
 		t.insert(key, value).unwrap();
 	}
-	let root = memdb.commit(t.commit());
+	let root = memdb.commit(t.commit().unwrap());
 
 	assert_eq!(
 		cache.lookup_value_for_key(&b"AB"[..]).unwrap().data().flatten().unwrap(),
@@ -987,7 +987,7 @@ fn test_record_value() {
 	for (key, value) in key_value.iter() {
 		t.insert(key, value).unwrap();
 	}
-	let root = t.commit().apply_to(&mut memdb);
+	let root = t.commit().unwrap().apply_to(&mut memdb);
 
 	// Value access would record a two nodes (branch and leaf with value 32 len inline).
 	let mut recorder = Recorder::<L>::new();
@@ -1133,7 +1133,7 @@ fn test_trie_nodes_recorded_internal<T: TrieLayout, DB: TestDB<T>>() {
 	for (key, value) in &key_value {
 		t.insert(key, value).unwrap();
 	}
-	let root = memdb.commit(t.commit());
+	let root = memdb.commit(t.commit().unwrap());
 
 	for mut cache in [Some(TestTrieCache::<T>::default()), None] {
 		for get_hash in [true, false] {

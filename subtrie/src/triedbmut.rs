@@ -572,19 +572,9 @@ impl<L: TrieLayout> InsertAction<L> {
 // What kind of node is stored here.
 enum Stored<L: TrieLayout> {
 	// A new node with optionally its original location.
-	New(Node<L>, Option<L::Location>),
+	New(Node<L>),
 	// A cached node, loaded from the DB.
 	Cached(Node<L>, TrieHash<L>, L::Location),
-}
-
-impl<L: TrieLayout> Stored<L> {
-	// TODO rem
-	fn existing(&self) -> Option<L::Location> {
-		match self {
-			Stored::Cached(_, _, loc) => Some(*loc),
-			Stored::New(_, l) => l,
-		}
-	}
 }
 
 /// Used to build a collection of child nodes from a collection of `NodeHandle`s
@@ -763,10 +753,9 @@ pub struct Changeset<H, DL> {
 	pub prefix: OwnedPrefix,
 	pub data: Vec<u8>,
 	pub children: Vec<Changeset<H, DL>>,
-	pub existing: Option<DL>,
 	// Storing the key and removed nodes related
-	// to this change set node (only needed for old trie).
-	pub removed_keys: Option<(Option<Vec<u8>>, Vec<(H, OwnedPrefix)>)>,
+	// to this change set node (only DL needed for new trie).
+	pub removed_keys: Option<(Option<Vec<u8>>, Vec<(H, OwnedPrefix, DL)>)>,
 }
 
 impl<H, DL> Changeset<H, DL> {
@@ -785,7 +774,6 @@ impl<H, DL> Changeset<H, DL> {
 			prefix: Default::default(),
 			data: C::empty_node().to_vec(),
 			children: Default::default(),
-			existing: None,
 			removed_keys: None,
 		}
 	}
@@ -812,7 +800,7 @@ impl<H: Copy, DL: Default> Changeset<H, DL> {
 			MH: Hasher<Out = H> + Send + Sync,
 		{
 			if let Some((k, removed)) = node.removed_keys.as_ref() {
-				for (hash, p) in removed.iter() {
+				for (hash, p, location) in removed.iter() {
 					if let Some(k) = k {
 						let prefixed = prefix_prefix(k.as_slice(), (p.0.as_slice(), p.1));
 						mem_db.remove(hash, (prefixed.0.as_slice(), prefixed.1));
@@ -876,7 +864,7 @@ where
 	db: &'a dyn NodeDB<L::Hash, DBValue, L::Location>,
 	root: TrieHash<L>,
 	root_handle: NodeHandle<TrieHash<L>, L::Location>,
-	death_row: Set<(TrieHash<L>, OwnedPrefix)>,
+	death_row: Set<(TrieHash<L>, OwnedPrefix, L::Location)>,
 	death_row_child: Vec<TreeRefChangeset<L>>,
 	/// Optional cache for speeding up the lookup of nodes.
 	cache: Option<&'a mut dyn TrieCache<L::Codec, L::Location>>,
@@ -960,11 +948,11 @@ where
 			Stored::Cached(node, hash, location) => match inspector(self, node, key)? {
 				Action::Restore(node) => Some((Stored::Cached(node, hash, location), false)),
 				Action::Replace(node) => {
-					self.death_row.insert((hash, current_key.left_owned()));
+					self.death_row.insert((hash, current_key.left_owned(), location));
 					Some((Stored::New(node), true))
 				},
 				Action::Delete(tree_ref) => {
-					self.death_row.insert((hash, current_key.left_owned()));
+					self.death_row.insert((hash, current_key.left_owned(), location));
 					tree_ref.map(|c| self.death_row_child.push(c));
 					None
 				},
@@ -1101,13 +1089,19 @@ where
 		stored_value: Option<Value<L>>,
 		prefix: Prefix,
 	) {
+		let location = if let Some(Value::Node(_, location)) = &stored_value {
+			*location
+		} else {
+			Default::default()
+		};
 		match &stored_value {
-			Some(Value::NewNode(Some(hash), _)) // also removing new node in case commit is called multiple times
-			| Some(Value::Node(hash, _)) => {
-				self.death_row.insert((
-					hash.clone(),
-					(prefix.0.into(), prefix.1),
-				));
+			// also removing new node in case commit is called multiple times
+			// this will insert default location in payload that shall be ignored.
+			// TODO test without it??? when using location this canot be done:
+			// the commit state afetr commit would require to be updated with
+			// new location anyway.
+			Some(Value::NewNode(Some(hash), _)) | Some(Value::Node(hash, _)) => {
+				self.death_row.insert((hash.clone(), (prefix.0.into(), prefix.1), location));
 			},
 			_ => (),
 		}
@@ -1408,7 +1402,7 @@ where
 					// make an extension using it. this is a replacement.
 					InsertAction::Replace(Node::Extension(
 						existing_key.to_stored_range(common),
-						self.storage.alloc(Stored::New(augmented_low, None)).into(), // TODO fishy none loc
+						self.storage.alloc(Stored::New(augmented_low)).into(),
 					))
 				}
 			},
@@ -1439,11 +1433,7 @@ where
 						// No need to register set branch (was here before).
 						// Note putting a branch in extension requires fix.
 						let ext = Node::Extension(existing_key.mid(1).to_stored(), child_branch);
-						Some(self.storage.alloc(Stored::New(ext, None)).into()) // TODO none is fishy but we
-																																		// shall remove extinesion code
-																																		// soon. TODO change if we
-																																		// endup passsing location in
-																																		// inspactor
+						Some(self.storage.alloc(Stored::New(ext)).into())
 					};
 
 					// continue inserting.
@@ -1499,8 +1489,7 @@ where
 					// this is known because the partial key is only the common prefix.
 					InsertAction::Replace(Node::Extension(
 						existing_key.to_stored_range(common),
-						self.storage.alloc(Stored::New(augmented_low, None)).into(), // TODO this None in
-																																				 // location is fishy!!!
+						self.storage.alloc(Stored::New(augmented_low)).into(),
 					))
 				}
 			},
@@ -1830,12 +1819,15 @@ where
 								self.storage.destroy(handle)
 							},
 						};
-						let (child_node, child_location) = match stored {
-							Stored::New(node, location) => (node, location),
+						let child_node = match stored {
+							Stored::New(node) => node,
 							Stored::Cached(node, hash, location) => {
-								self.death_row
-									.insert((hash, (child_prefix.0[..].into(), child_prefix.1)));
-								(node, Some(location))
+								self.death_row.insert((
+									hash,
+									(child_prefix.0[..].into(), child_prefix.1),
+									location,
+								));
+								node
 							},
 						};
 						btreerefset.map(|c| self.death_row_child.push(c));
@@ -1928,8 +1920,8 @@ where
 				};
 
 				let (child_node, maybe_hash, child_location) = match stored {
-					Stored::New(node, location) => (node, None, location),
-					Stored::Cached(node, hash, location) => (node, Some(hash), Some(location)),
+					Stored::New(node) => (node, None, Default::default()),
+					Stored::Cached(node, hash, location) => (node, Some(hash), location),
 				};
 
 				match child_node {
@@ -1937,8 +1929,11 @@ where
 						// combine with node below.
 						if let Some(hash) = maybe_hash {
 							// delete the cached child since we are going to replace it.
-							self.death_row
-								.insert((hash, (child_prefix.0[..].into(), child_prefix.1)));
+							self.death_row.insert((
+								hash,
+								(child_prefix.0[..].into(), child_prefix.1),
+								child_location,
+							));
 						}
 						// subpartial
 						let mut partial = partial;
@@ -1956,8 +1951,11 @@ where
 						// combine with node below.
 						if let Some(hash) = maybe_hash {
 							// delete the cached child since we are going to replace it.
-							self.death_row
-								.insert((hash, (child_prefix.0[..].into(), child_prefix.1)));
+							self.death_row.insert((
+								hash,
+								(child_prefix.0[..].into(), child_prefix.1),
+								child_location,
+							));
 						}
 						// subpartial oly
 						let mut partial = partial;
@@ -1976,9 +1974,9 @@ where
 
 						// reallocate the child node.
 						let stored = if let Some(hash) = maybe_hash {
-							Stored::Cached(child_node, hash, child_location.unwrap_or_default())
+							Stored::Cached(child_node, hash, child_location)
 						} else {
-							Stored::New(child_node, child_location)
+							Stored::New(child_node)
 						};
 
 						Ok(Node::Extension(partial, self.storage.alloc(stored).into()))
@@ -2020,8 +2018,8 @@ where
 		let mut removed = Vec::with_capacity(self.death_row.len());
 
 		#[cfg(feature = "std")]
-		for (hash, prefix) in self.death_row.drain() {
-			removed.push((hash, prefix));
+		for (hash, prefix, location) in self.death_row.drain() {
+			removed.push((hash, prefix, location));
 		}
 
 		let handle = match self.root_handle() {
@@ -2033,7 +2031,7 @@ where
 		};
 
 		match self.storage.destroy(handle) {
-			Stored::New(node, existing) => {
+			Stored::New(node) => {
 				let mut k = NibbleVec::new();
 				let mut children = Vec::new();
 
@@ -2049,9 +2047,6 @@ where
 								data: value.to_vec(), //TODO: avoid allocation
 								children: Default::default(),
 								removed_keys: None,
-								existing: unimplemented!(
-									"TODO location of children in into_encoded"
-								),
 							});
 
 							k.drop_lasts(mov);
@@ -2081,7 +2076,6 @@ where
 					data: encoded_root,
 					children,
 					removed_keys: Some((keyspace.map(|s| s.to_vec()), removed)),
-					existing,
 				})
 			},
 			Stored::Cached(node, hash, location) => {
@@ -2136,7 +2130,7 @@ where
 						// TODO why do we need to retthis??
 						ChildReference::Hash(hash, location)
 					},
-					Stored::New(node, existing) => {
+					Stored::New(node) => {
 						let mut sub_children = Vec::new();
 						let (encoded, child_set) = {
 							let commit_child = |node: NodeToEncode<TrieHash<L>, L::Location>,
@@ -2152,9 +2146,6 @@ where
 											data: value.to_vec(), //TODO: avoid allocation
 											children: Default::default(),
 											removed_keys: None,
-											existing: unimplemented!(
-												"TODO location of children in into_encoded"
-											),
 										});
 
 										self.cache_value(prefix.inner(), value, value_hash);
@@ -2187,7 +2178,6 @@ where
 								data: encoded,
 								children: sub_children,
 								removed_keys: None,
-								existing,
 							});
 							ChildReference::Hash(hash, Default::default())
 						} else {
@@ -2299,7 +2289,7 @@ where
 			None => {
 				#[cfg(feature = "std")]
 				trace!(target: "trie", "remove: obliterated trie");
-				let handle = self.storage.alloc(Stored::New(Node::Empty, None));
+				let handle = self.storage.alloc(Stored::New(Node::Empty));
 				self.root_handle = NodeHandle::InMemory(handle);
 			},
 		}

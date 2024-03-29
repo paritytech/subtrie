@@ -33,7 +33,7 @@ fn trie_record() {
 	x.insert(b"insert", b"remove").unwrap();
 	x.insert(b"pirate", b"aargh!").unwrap();
 	x.insert(b"yo ho ho", b"and a bottle of rum").unwrap();
-	let commit = x.commit();
+	let commit = x.commit().unwrap();
 	let root = *commit.hash();
 	commit.apply_to(&mut db);
 

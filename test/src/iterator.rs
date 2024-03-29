@@ -31,7 +31,7 @@ pub(crate) fn build_trie_db<T: TrieLayout, DB: TestDB<T>>(
 		for (x, y) in pairs.iter() {
 			t.insert(x, y).unwrap();
 		}
-		t.commit()
+		t.commit().unwrap()
 	};
 	let root = memdb.commit(changeset);
 	(memdb, root)
