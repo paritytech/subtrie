@@ -34,9 +34,9 @@ mod rstd {
 	pub use alloc::{
 		borrow, boxed,
 		collections::{btree_map::BTreeMap, VecDeque},
-		rc, sync, vec,
+		sync, vec,
 	};
-	pub use core::{cmp, convert, fmt, hash, iter, marker, mem, ops, result};
+	pub use core::{cmp, convert, hash, iter, marker, mem, ops, result};
 	pub trait Error {}
 	impl<T> Error for T {}
 }
@@ -45,7 +45,6 @@ mod rstd {
 use self::rstd::{fmt, Error};
 
 use self::rstd::{boxed::Box, vec::Vec};
-pub use iterator::TrieDBNodeDoubleEndedIterator;
 use node::NodeOwned;
 use node_db::MaybeDebug;
 
@@ -79,14 +78,14 @@ pub use self::{
 	recorder::Recorder,
 	triedb::{TrieDB, TrieDBBuilder, TrieDBIterator, TrieDBKeyIterator},
 	triedbmut::{
-		Changeset, ChildReference, ExistingChangesetNode, NewChangesetNode, OwnedPrefix, TrieDBMut,
-		TrieDBMutBuilder, Value,
+		Changenode, Changeset, ChildReference, NewChangesetNode, OwnedPrefix, TreeRefChangeset,
+		TrieDBMut, TrieDBMutBuilder, Value,
 	},
 };
 use crate::node_db::Hasher;
 pub use crate::{
 	iter_build::{trie_visit, ProcessEncodedNode, TrieBuilder, TrieRoot, TrieRootUnhashed},
-	iterator::{TrieDBNodeIterator, TrieDBRawIterator},
+	iterator::{TrieDBNodeDoubleEndedIterator, TrieDBNodeIterator, TrieDBRawIterator},
 	node_codec::{NodeCodec, Partial},
 	trie_codec::{decode_compact, decode_compact_from_iter, encode_compact},
 };
@@ -378,7 +377,15 @@ pub trait TrieLayout {
 }
 
 /// Trait alias for requirement of location with `TrieLayout`.
-pub trait Location: Copy + Default + Eq + PartialEq + MaybeDebug {}
+pub trait Location: Copy + Default + Eq + PartialEq + MaybeDebug {
+	fn into_changes<L: TrieLayout<Location = Self>>(self) -> TreeRefChangeset<L> {
+		if self == Self::default() {
+			None
+		} else {
+			Some(Changenode::Existing(self))
+		}
+	}
+}
 
 impl<T: Copy + Default + Eq + PartialEq + MaybeDebug> Location for T {}
 
